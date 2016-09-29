@@ -6,16 +6,23 @@ import javax.ws.rs.client.Client;
 import javax.ws.rs.client.WebTarget;
 
 import org.jboss.resteasy.client.jaxrs.ResteasyClientBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class RestilienceFactory implements ErrorListener {
-	private WebTarget webTarget;
+public class RestilienceFactory {
+	private static Logger logger = LoggerFactory.getLogger(RestilienceFactory.class);
 	
-	public RestilienceFactory(String basePath) {
+	private WebTarget webTarget;
+	private String serviceName;
+	
+	private EtcdAdapter etcd = new EtcdAdapter();
+	
+	public RestilienceFactory(String serviceName, String basePath) {
+		this.serviceName = serviceName;
 		Client client = new ResteasyClientBuilder()
 				.maxPooledPerRoute(5)
                 .connectionPoolSize(10)
                 .socketTimeout(10, TimeUnit.SECONDS)
-                .register(new ClientErrorFilter(this))
                 .build();
 		webTarget = client.target("http://" + getHost() + "/" + basePath);
 	}
@@ -25,11 +32,10 @@ public class RestilienceFactory implements ErrorListener {
 	}
 	
 	private String getHost() {
-		return "localhost:8080";
+		return etcd.getHostPort(serviceName);
 	}
 
-	@Override
-	public void onError(String host) {
-		
+	public void onError() {
+		logger.warn("Host/Port failed: {}/{}", webTarget.getUri().getHost(), webTarget.getUri().getPort());
 	}
 }
