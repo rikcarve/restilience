@@ -3,6 +3,7 @@ package ch.carve.restilience;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeoutException;
 
 import org.slf4j.Logger;
@@ -19,8 +20,6 @@ import mousio.etcd4j.responses.EtcdKeysResponse.EtcdNode;
 /**
  * Communication with ETCD, service name can be registered, sends notification with current best
  * host/port.
- * @author rik
- *
  */
 public class EtcdAdapter implements IsSimplePromiseResponseHandler<EtcdKeysResponse> {
 	private static Logger logger = LoggerFactory.getLogger(EtcdAdapter.class);
@@ -28,6 +27,7 @@ public class EtcdAdapter implements IsSimplePromiseResponseHandler<EtcdKeysRespo
 	
 	private ServerListener serverListener;
 	private String serviceName;
+	private String currentServer;
 	
 	{
         String etcdAddress = System.getProperty("ETCD_HOST", "192.168.99.100:2379");
@@ -40,19 +40,26 @@ public class EtcdAdapter implements IsSimplePromiseResponseHandler<EtcdKeysRespo
         try {
 			etcdClient.getDir("services/" + serviceName).recursive().waitForChange().send().addListener(this);
 		} catch (IOException e) {
-			e.printStackTrace();
+			logger.warn("Problem with adding listener to etcd: {}", serviceName, e);
 		}		
 	}
 	
-	public String getHostPort() {
+	public String getServer() {
 		try {
 			List<EtcdNode> nodes = etcdClient.getDir("services/" + serviceName).recursive().send().get().node.nodes;
 			if (nodes.isEmpty()) {
 				return null;
 			}
-			logger.info("Use {}", nodes.get(0).getValue());
-			return nodes.get(0).getValue();
+			Optional<EtcdNode> localServer = nodes.stream().filter(s -> isLocalServer(s.getValue())).findAny();
+			if (localServer.isPresent()) {
+				currentServer = localServer.get().getValue();
+			} else {
+			    currentServer = nodes.get(0).getValue();
+			}
+			logger.info("Using {}", currentServer);
+			return currentServer;
 		} catch (IOException | EtcdException | EtcdAuthenticationException | TimeoutException e) {
+			logger.warn("Problem with etcd query {}", serviceName, e);
 			return null;
 		}
 	}
@@ -62,9 +69,15 @@ public class EtcdAdapter implements IsSimplePromiseResponseHandler<EtcdKeysRespo
 		try {
 			logger.info(response.get().action.name());
 		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+			logger.warn("Problem with etcd listener {}", serviceName, e);
 		}
-		serverListener.serverNotification(getHostPort());		
+		String server = getServer();
+		if (server != null) {
+			serverListener.serverNotification(getServer());
+		}
+	}
+	
+	private boolean isLocalServer(String server) {
+		return "localhost:8080".equals(server);
 	}
 }

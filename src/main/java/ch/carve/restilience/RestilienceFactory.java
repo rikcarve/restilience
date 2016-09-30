@@ -12,15 +12,13 @@ import org.slf4j.LoggerFactory;
 public class RestilienceFactory implements ServerListener {
 	private static Logger logger = LoggerFactory.getLogger(RestilienceFactory.class);
 	
-	private String serviceName;
 	private String basePath;
 	private WebTarget webTarget;
-	private String currentHostPort;
+	private String currentServer;
 	private final Client client;
 	private EtcdAdapter etcd;
 	
 	public RestilienceFactory(String serviceName, String basePath) {
-		this.serviceName = serviceName;
 		this.basePath = basePath;
 		client = new ResteasyClientBuilder()
 				.maxPooledPerRoute(5)
@@ -31,15 +29,16 @@ public class RestilienceFactory implements ServerListener {
 	}
 	
 	public WebTarget getWebTarget() {
+		// todo sync
 		if (webTarget == null) {
-			webTarget = client.target("http://" + getHost() + "/" + basePath);
+			webTarget = client.target("http://" + getServer() + "/" + basePath);
 		}
 		return webTarget;
 	}
 	
-	private String getHost() {
-		currentHostPort = etcd.getHostPort();
-		return currentHostPort;
+	private String getServer() {
+		currentServer = etcd.getServer();
+		return currentServer;
 	}
 
 	public void onError() {
@@ -48,7 +47,10 @@ public class RestilienceFactory implements ServerListener {
 	}
 
 	@Override
-	public void serverNotification(String hostPort) {
-		logger.info("After change: {}", hostPort);
+	public void serverNotification(String server) {
+		logger.info("Server notification: {}", server);
+		if (!server.equals(currentServer)) {
+			webTarget = client.target("http://" + server + "/" + basePath);;
+		}
 	}
 }
